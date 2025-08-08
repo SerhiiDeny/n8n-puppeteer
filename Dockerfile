@@ -1,6 +1,6 @@
 FROM node:20-bullseye
 
-# Устанавливаем системные зависимости для Chrome
+# Устанавливаем системные зависимости и Chromium
 RUN apt-get update && apt-get install -y \
     wget \
     ca-certificates \
@@ -19,19 +19,12 @@ RUN apt-get update && apt-get install -y \
     libxdamage1 \
     libxrandr2 \
     xdg-utils \
-    unzip \
+    chromium \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем последнюю версию Chrome (Stable)
-RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
-    apt install -y ./google-chrome-stable_current_amd64.deb && \
-    rm google-chrome-stable_current_amd64.deb
-
-# Устанавливаем puppeteer-core и n8n глобально
+# Устанавливаем puppeteer-core и n8n
 RUN npm install -g puppeteer-core n8n
 
 # Устанавливаем рабочую директорию
 WORKDIR /data
-
-# Стартовая команда (если нужно добавить ENTRYPOINT — скажи)
