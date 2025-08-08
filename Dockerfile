@@ -1,6 +1,6 @@
-FROM n8nio/n8n:1.44.0
+FROM node:20-bullseye
 
-# Устанавливаем системные зависимости для Puppeteer
+# Устанавливаем необходимые системные пакеты
 RUN apt-get update && apt-get install -y \
     wget \
     ca-certificates \
@@ -22,5 +22,10 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем Puppeteer
-RUN npm install puppeteer
+# Устанавливаем Puppeteer и n8n
+RUN npm install -g puppeteer n8n
+
+# Создаём рабочую директорию
+WORKDIR /data
+
+# От
