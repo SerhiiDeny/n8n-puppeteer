@@ -1,4 +1,4 @@
-FROM n8nio/n8n:latest-root
+FROM n8nio/n8n:1.44.0
 
 # Устанавливаем системные зависимости для Puppeteer
 RUN apt-get update && apt-get install -y \
@@ -22,5 +22,5 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Установка Puppeteer
+# Устанавливаем Puppeteer
 RUN npm install puppeteer
