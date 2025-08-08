@@ -1,9 +1,8 @@
 FROM node:20-bullseye
 
-# Устанавливаем системные зависимости и Chromium
+# Устанавливаем системные зависимости
 RUN apt-get update && apt-get install -y \
     wget \
-    ca-certificates \
     fonts-liberation \
     libappindicator3-1 \
     libasound2 \
@@ -19,12 +18,14 @@ RUN apt-get update && apt-get install -y \
     libxdamage1 \
     libxrandr2 \
     xdg-utils \
-    chromium \
-    --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
+    libu2f-udev \
+    libvulkan1 \
+    libgbm1 \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем puppeteer-core и n8n
-RUN npm install -g puppeteer-core n8n
+# Устанавливаем puppeteer (вместе с Chromium)
+RUN npm install -g puppeteer
 
-# Устанавливаем рабочую директорию
+# Создаем рабочую директорию
 WORKDIR /data
