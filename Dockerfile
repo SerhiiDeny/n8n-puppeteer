@@ -1,6 +1,6 @@
-FROM n8nio/n8n
+FROM n8nio/n8n:latest-root
 
-# Устанавливаем зависимости для Chromium
+# Устанавливаем системные зависимости для Puppeteer
 RUN apt-get update && apt-get install -y \
     wget \
     ca-certificates \
@@ -22,5 +22,5 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем Puppeteer
+# Установка Puppeteer
 RUN npm install puppeteer
