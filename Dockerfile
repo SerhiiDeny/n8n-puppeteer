@@ -1,39 +1,36 @@
-FROM node:20-bullseye
+FROM n8nio/n8n:latest
 
-# Устанавливаем Chromium и зависимости
 USER root
-RUN apt-get update && apt-get install -y chromium fonts-liberation && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем n8n глобально
-RUN npm install -g n8n
+# Chromium + зависимости
+RUN apt-get update && apt-get install -y \
+    chromium \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libgdk-pixbuf2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    xdg-utils \
+ && rm -rf /var/lib/apt/lists/*
 
-# Создаём рабочую директорию
-RUN mkdir -p /home/node/.n8n && chown -R node:node /home/node
+# Ставим puppeteer-core только в .n8n
+RUN npm install --no-audit --no-fund --prefix /home/node/.n8n puppeteer-core@22
+
+# Указываем переменные окружения
+ENV NODE_FUNCTION_ALLOW_EXTERNAL=1 \
+    NODE_FUNCTION_EXTERNAL_MODULES=puppeteer-core \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 USER node
 WORKDIR /home/node/.n8n
-
-# Отключаем авто-скачивание Chromium при установке Puppeteer
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-
-# Устанавливаем Puppeteer в локальные зависимости пользователя node
-RUN printf '{\n  "name": "n8n-externals",\n  "version": "1.0.0"\n}\n' > package.json \
- && npm install puppeteer
-
-# Повторная установка Puppeteer для совместимости
-RUN printf '{\n  "name": "n8n-externals",\n  "version": "1.0.0"\n}\n' > package.json \
- && npm install puppeteer
-
-# Устанавливаем Puppeteer прямо в node_modules n8n с правами root
-USER root
-RUN mkdir -p /usr/local/lib/node_modules/n8n \
- && npm install puppeteer --unsafe-perm=true --allow-root --prefix /usr/local/lib/node_modules/n8n
-USER node
-
-# Переменные окружения для n8n
-ENV NODE_FUNCTION_ALLOW_EXTERNAL=puppeteer
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-ENV N8N_USER_FOLDER=/home/node/.n8n
-ENV N8N_DIAGNOSTICS_ENABLED=false
 
 EXPOSE 5678
 CMD ["n8n"]
