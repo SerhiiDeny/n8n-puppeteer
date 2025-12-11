@@ -1,5 +1,5 @@
 # 1) Базовый образ n8n
-FROM n8nio/n8n:1.107.4
+FROM n8nio/n8n:1.120.4
 
 USER root
 SHELL ["/bin/sh", "-lc"]
@@ -44,3 +44,4 @@ ENV NODE_FUNCTION_ALLOW_EXTERNAL=puppeteer-core,puppeteer \
 # 5) Возврат к дефолту и запуск n8n
 WORKDIR /home/node
 CMD ["n8n"]
+
