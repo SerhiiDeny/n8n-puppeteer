@@ -46,3 +46,4 @@ WORKDIR /home/node
 CMD ["n8n"]
 
 
+
