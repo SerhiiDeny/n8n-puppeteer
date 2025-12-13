@@ -1,10 +1,10 @@
-# 1) Базовый образ n8n
+# 1) Base image (n8n)
 FROM n8nio/n8n:1.123.5
 
 USER root
 SHELL ["/bin/sh", "-lc"]
 
-# 2) Chromium + зависимости (поддержка Debian/Ubuntu ИЛИ Alpine)
+# 2) Chromium + dependencies (Debian/Ubuntu or Alpine)
 RUN set -eux; \
   if command -v apt-get >/dev/null 2>&1; then \
     echo "Debian/Ubuntu base detected"; \
@@ -19,31 +19,29 @@ RUN set -eux; \
     echo "Alpine base detected"; \
     apk add --no-cache \
       chromium nss freetype harfbuzz ca-certificates ttf-freefont; \
-    # На Alpine бинарь часто chromium-browser — создаём универсальную ссылку
     [ -f /usr/bin/chromium-browser ] && ln -sf /usr/bin/chromium-browser /usr/bin/chromium || true; \
   else \
     echo "Unsupported base image (no apt-get and no apk)"; exit 1; \
   fi
 
-# 3) Правильная установка puppeteer-core в N8N_USER_FOLDER с package.json
-ENV N8N_USER_FOLDER=/home/node/.n8n
-RUN mkdir -p "$N8N_USER_FOLDER" && chown -R node:node "$N8N_USER_FOLDER"
+# 3) Install puppeteer-core into a VALID folder (IMPORTANT)
+#    The old failure was because npm init ran inside /home/node/.n8n -> invalid package name ".n8n"
+RUN mkdir -p /opt/puppeteer \
+ && chown -R node:node /opt/puppeteer
 
 USER node
-WORKDIR /home/node/.n8n
+WORKDIR /opt/puppeteer
+
 RUN npm init -y \
- && npm install --omit=dev puppeteer-core@22
+ && npm install --omit-dev puppeteer-core@22
 
-# 4) Переменные окружения для Code-ноды и Chromium
-ENV NODE_FUNCTION_ALLOW_EXTERNAL=puppeteer-core,puppeteer \
-    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
-    PUPPETEER_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --no-zygote --single-process" \
-    NODE_PATH=/home/node/.n8n/node_modules
+# 4) Env for n8n Code/Function nodes to resolve puppeteer
+ENV NODE_FUNCTION_ALLOW_EXTERNAL=puppeteer-core,puppeteer
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --no-zygote --single-process"
+ENV NODE_PATH=/opt/puppeteer/node_modules
 
-# 5) Возврат к дефолту и запуск n8n
+# 5) Back to default start
 WORKDIR /home/node
 CMD ["n8n"]
-
-
-
