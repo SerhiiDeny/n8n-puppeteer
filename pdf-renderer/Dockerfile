@@ -7,12 +7,13 @@ WORKDIR /app
 RUN chown pptruser:pptruser /app
 USER pptruser
 ENV NODE_ENV=production \
+    HOME=/home/pptruser \
     PORT=8080 \
     PUPPETEER_CACHE_DIR=/home/pptruser/.cache/puppeteer \
     PUPPETEER_SKIP_DOWNLOAD=true
 COPY --chown=pptruser:pptruser package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
-COPY --chown=pptruser:pptruser server.js render-worker.js ./
+COPY --chown=pptruser:pptruser server.js render-worker.js browser-health.js ./
 COPY --chown=pptruser:pptruser assets ./assets
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "-s", "--"]

@@ -5,14 +5,17 @@ export const LOGO_URL = 'https://raw.githubusercontent.com/SerhiiDeny/n8n-puppet
 export const CHROME_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote'];
 
 // Only the supervisor can send IPC. No caller-controlled launch/PDF options.
-process.once('message', async ({ html }) => {
+process.once('message', async ({ html, startup = false }) => {
   let browser;
   let result = { ok: false, error: 'render_failed' };
   let blocked = 0;
   let logoServed = 0;
   try {
     const logo = await readFile(new URL('./assets/Logo_PPF_Barcelona_negro.png', import.meta.url));
-    browser = await puppeteer.launch({ headless: true, args: CHROME_ARGS, timeout: 30000 });
+    // Puppeteer 25 executablePath is asynchronous. This path is shared by the
+    // startup smoke test and real renders, under the same non-root user.
+    const executablePath = await puppeteer.executablePath();
+    browser = await puppeteer.launch({ executablePath, headless: true, args: CHROME_ARGS, timeout: startup ? 55000 : 30000 });
     const page = await browser.newPage();
     await page.setJavaScriptEnabled(false);
     await page.setRequestInterception(true);
@@ -26,9 +29,10 @@ process.once('message', async ({ html }) => {
     });
     await page.setContent(html, { waitUntil: 'load', timeout: 0 });
     const pdf = await page.pdf({ format: 'A4', printBackground: true, timeout: 0 });
-    result = { ok: true, pdf: Buffer.from(pdf).toString('base64'), blocked, logoServed };
-  } catch {
+    result = { ok: true, pdf: Buffer.from(pdf).toString('base64'), blocked, logoServed, chromium: await browser.version() };
+  } catch (error) {
     result = { ok: false, error: 'render_failed' };
+    if (startup) result.diagnostic = { message: error.message, stack: error.stack };
   } finally {
     if (browser) {
       try { await browser.close(); } catch { /* Supervisor kills the process group on timeout. */ }

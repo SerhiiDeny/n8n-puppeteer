@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 import { createServer } from '../server.js';
+import { startBrowserCheck } from '../browser-health.js';
 
 async function fixture(t, options = {}) {
   const secret = randomBytes(32).toString('hex');
-  const server = createServer({ secret, chromium: 'test-browser', ...options });
+  const server = createServer({ secret, chromium: 'test-browser', logger: () => {}, ...options });
   await new Promise(resolve => server.listen(0, '::', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
   const url = `http://[::1]:${server.address().port}`;
@@ -103,4 +104,41 @@ test('two active plus ten queued; thirteenth request is rejected and queue drain
 test('wrong path produces a non-success response', async t => {
   const f = await fixture(t);
   assert.equal((await fetch(f.url + '/wrong')).status, 404);
+});
+
+test('startup retries transient failures and exposes readiness only after success', async t => {
+  const logs = [];
+  const health = { status: 'starting', chromium: null, error: new Error('cold start') };
+  const f = await fixture(t, { health, logger: line => logs.push(JSON.parse(line)) });
+  assert.equal((await fetch(f.url + '/health')).status, 503);
+  let calls = 0;
+  const failed = new Error('synthetic launch failure');
+  await startBrowserCheck(health, async () => {
+    if (++calls < 3) throw failed;
+    return { chromium: 'Chrome/test' };
+  }, { retryDelay: 1, logger: line => logs.push(JSON.parse(line)) });
+  assert.equal(calls, 3);
+  assert.equal(health.status, 'ready');
+  assert.equal((await fetch(f.url + '/health')).status, 200);
+  const failures = logs.filter(row => row.event === 'chromium_startup_failed');
+  assert.equal(failures.length, 2);
+  assert.ok(failures.every(row => row.message === failed.message && row.stack === failed.stack));
+});
+
+test('terminal startup failure retains full diagnostics on every health failure', async t => {
+  const logs = [];
+  const health = { status: 'starting', chromium: null };
+  const error = new Error('synthetic missing executable');
+  await startBrowserCheck(health, async () => { throw error; }, { retryDelay: 1, logger: line => logs.push(JSON.parse(line)) });
+  assert.equal(health.status, 'unavailable');
+  const f = await fixture(t, { health, logger: line => logs.push(JSON.parse(line)) });
+  for (let i = 0; i < 2; i++) {
+    const response = await fetch(f.url + '/health');
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { ok: false, error: 'browser_unavailable' });
+  }
+  assert.equal(logs.filter(row => row.event === 'chromium_startup_failed').length, 3);
+  const failures = logs.filter(row => row.event === 'chromium_health_failed');
+  assert.equal(failures.length, 2);
+  assert.ok(failures.every(row => row.message === error.message && row.stack === error.stack));
 });

@@ -2,11 +2,11 @@
 
 Phase A of SEC-03.11 / T-31. Root Dockerfile remains the existing n8n image until the owner accepts Phase C.
 
-Deploy this directory from branch `codex/sec-03.11-pdf-renderer` as Railway service `pdf-renderer`, production environment, root directory `/pdf-renderer`, healthcheck `/health`, port 8080. Do not generate a public domain. The owner sets `PDF_RENDER_SHARED_SECRET` (at least 32 characters) in Railway and the same value in the n8n Header Auth credential `PDF Render Key`, header `X-PDF-Render-Key`. Never put the value in files or commands.
+Deploy this directory from branch `codex/sec-03.11-pdf-renderer` as Railway service `pdf-renderer`, production environment, root directory `/pdf-renderer`, healthcheck `/health` with a 240-second timeout, port 8080. Do not generate a public domain. The owner sets `PDF_RENDER_SHARED_SECRET` (at least 32 characters) in Railway and the same value in the n8n Header Auth credential `PDF Render Key`, header `X-PDF-Render-Key`. Never put the value in files or commands.
 
 The base image is the official Puppeteer 25.14.0 image pinned by digest, with matching Puppeteer and Chrome for Testing. `npm ci` installs the locked dependency tree without lifecycle scripts or another browser download. The runtime user is `pptruser`; tini is PID 1 and reaps orphan descendants. No SYS_ADMIN capability is needed because this explicitly authorized renderer uses `--no-sandbox`.
 
-`GET /health` returns `{ "ok": true, "chromium": "<version>" }`. Missing/short secret returns HTTP 500 on health and 503 on render, preventing a deployment becoming healthy without its key. Missing browser returns health 503.
+`GET /health` returns `{ "ok": true, "chromium": "<version>" }`. Missing/short secret returns HTTP 500 on health and 503 on render, preventing a deployment becoming healthy without its key. Readiness launches Chromium and renders a fixed page through the same isolated worker as PDF requests. It awaits Puppeteer's asynchronous executable path. Three attempts allow 60 seconds each, with five seconds between attempts; health returns 503 until an attempt succeeds. Each startup failure and each unhealthy health request logs the full message and stack to stdout. The worker receives only an allowlisted environment without the shared secret. HOME and the browser cache belong to the non-root runtime user.
 
 `POST /render` requires the key and `Content-Type: application/json`, with `{ "html": "..." }`. The limit is 5 MiB (5,242,880 bytes). Other fields are ignored. Authentication compares SHA256 digests in constant time before body processing. No HTML, header values or URLs are logged.
 

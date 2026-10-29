@@ -1,9 +1,8 @@
 import http from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { execFile, fork } from 'node:child_process';
-import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import puppeteer from 'puppeteer';
+import { startBrowserCheck, logHealthFailure } from './browser-health.js';
 
 const MAX_BODY = 5 * 1024 * 1024;
 const RENDER_MS = 45000;
@@ -28,7 +27,7 @@ function killTree(child) {
   }
 }
 
-export function render(html, signal) {
+export function runBrowserJob(html, signal, startup = false) {
   return new Promise((resolve, reject) => {
     const env = {};
     for (const key of ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'SYSTEMROOT', 'LANG', 'PUPPETEER_CACHE_DIR', 'PUPPETEER_EXECUTABLE_PATH']) {
@@ -40,7 +39,7 @@ export function render(html, signal) {
     let result;
     let error;
     const stop = reason => { error ??= reason; killTree(child); };
-    const timer = setTimeout(() => stop(failure(504, 'render_timeout')), RENDER_MS);
+    const timer = setTimeout(() => stop(failure(504, startup ? 'browser_startup_timeout' : 'render_timeout')), startup ? 60000 : RENDER_MS);
     const abort = () => stop(failure(499, 'client_closed'));
     signal.addEventListener('abort', abort, { once: true });
     child.on('message', message => { result = message; });
@@ -49,15 +48,26 @@ export function render(html, signal) {
       clearTimeout(timer);
       signal.removeEventListener('abort', abort);
       if (error) return reject(error);
-      if (!result?.ok) return reject(failure(500, 'render_failed'));
+      if (!result?.ok) {
+        const failed = failure(500, 'render_failed');
+        if (startup && result?.diagnostic) {
+          failed.message = result.diagnostic.message;
+          failed.stack = result.diagnostic.stack;
+        }
+        return reject(failed);
+      }
       const pdf = Buffer.from(result.pdf, 'base64');
       if (pdf.subarray(0, 5).toString() !== '%PDF-') return reject(failure(500, 'render_failed'));
-      console.info(JSON.stringify({ event: 'render_complete', blocked_requests: result.blocked, bundled_logo_requests: result.logoServed }));
-      resolve(pdf);
+      if (!startup) console.info(JSON.stringify({ event: 'render_complete', blocked_requests: result.blocked, bundled_logo_requests: result.logoServed }));
+      resolve({ pdf, chromium: result.chromium });
     });
     if (signal.aborted) abort();
-    else child.send({ html }, err => { if (err) stop(failure(500, 'render_failed')); });
+    else child.send({ html, startup }, err => { if (err) stop(failure(500, 'render_failed')); });
   });
+}
+
+export async function render(html, signal) {
+  return (await runBrowserJob(html, signal)).pdf;
 }
 
 class Semaphore {
@@ -109,16 +119,23 @@ async function body(req) {
 }
 
 // Module-only injection for tests; never configurable via HTTP/environment.
-export function createServer({ secret, chromium, renderer = render } = {}) {
+export function createServer({ secret, chromium, health, renderer = render, logger = console.info } = {}) {
   const configured = typeof secret === 'string' && secret.length >= 32;
   const expected = configured ? digest(secret) : null;
   const slots = new Semaphore();
   const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
-      if (!configured) return json(res, 500, 'not_configured');
-      if (!chromium) return json(res, 503, 'browser_unavailable');
+      if (!configured) {
+        logHealthFailure({ error: new Error('PDF render authentication is not configured') }, logger);
+        return json(res, 500, 'not_configured');
+      }
+      const version = health ? health.chromium : chromium;
+      if (!version) {
+        logHealthFailure(health || { error: new Error('Chromium readiness has not been established') }, logger);
+        return json(res, 503, health?.status === 'starting' ? 'browser_starting' : 'browser_unavailable');
+      }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      return res.end(JSON.stringify({ ok: true, chromium }));
+      return res.end(JSON.stringify({ ok: true, chromium: version }));
     }
     if (req.method !== 'POST' || req.url !== '/render') return json(res, 404, 'not_found');
     if (!configured) return json(res, 503, 'not_configured');
@@ -155,12 +172,9 @@ export function createServer({ secret, chromium, renderer = render } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  let chromium;
-  try {
-    const { stdout } = await promisify(execFile)(puppeteer.executablePath(), ['--version'], { timeout: 10000 });
-    chromium = stdout.trim();
-  } catch { /* Health stays non-successful; no path/environment disclosure. */ }
-  const server = createServer({ secret: process.env.PDF_RENDER_SHARED_SECRET, chromium });
+  const health = { status: 'starting', chromium: null, attempt: 0, error: new Error('Chromium readiness check is in progress') };
+  const server = createServer({ secret: process.env.PDF_RENDER_SHARED_SECRET, health });
   server.listen(Number(process.env.PORT || 8080), '::');
+  void startBrowserCheck(health, () => runBrowserJob('<!doctype html><html><body>Readiness</body></html>', new AbortController().signal, true));
   process.once('SIGTERM', () => server.close());
 }
