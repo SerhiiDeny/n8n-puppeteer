@@ -1,0 +1,9 @@
+{
+  "name": "ppf-pdf-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": { "start": "node server.js", "test": "node --test test/*.test.js" },
+  "dependencies": { "puppeteer": "25.14.0" }
+}
